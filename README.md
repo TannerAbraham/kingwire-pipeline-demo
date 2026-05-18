@@ -1,6 +1,31 @@
 # KingWire Pipeline Demo
 
+![Java](https://img.shields.io/badge/Java-17-blue) ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.5-blue) ![MySQL](https://img.shields.io/badge/MySQL-8.0-blue) ![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8.13-blue) ![Docker](https://img.shields.io/badge/Docker-Compose-blue)
+
 A backend data pipeline and REST API demonstrating extraction, harmonization, and centralized serving of product catalog data - built as an independent technical validation project.
+
+---
+
+## Table of Contents
+
+- [Assessment Response](#assessment-response)
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+- [ETL Pipeline Flow](#etl-pipeline-flow)
+- [Spring Application Architecture](#spring-application-architecture)
+- [Data Model](#data-model)
+- [Reconciliation Log](#reconciliation-log)
+- [UML Class Diagram](#uml-class-diagram)
+- [API Routes](#api-routes)
+- [Sample API Responses](#sample-api-responses)
+- [Environment Variables](#environment-variables)
+- [Stack](#stack)
+- [Java Spring vs Python](#java-spring-vs-python)
+- [Performance Design Decisions](#performance-design-decisions)
+- [Production Next Steps](#production-next-steps)
+- [Commit History](#commit-history)
+- [Project Structure](#project-structure)
+- [Thank You](#thank-you)
 
 ---
 
@@ -55,11 +80,43 @@ The Elasticsearch layer specifically addresses KingWire's product catalog use ca
 
 > *"Demonstrate your capacity to build a backend data pipeline and a data-serving application layer without reliance on a supporting engineering team."*
 
-The commit history is the evidence. 25 granular commits build the project from an empty repository to a fully functional system in a logical sequence - infrastructure first, data model second, extraction layer third, transformation fourth, API fifth, tests sixth, documentation last. Each commit is independently reviewable and represents a discrete, deliberate engineering decision. No commit does more than one thing.
-
-The `DECISIONS.md` documents nine architectural tradeoffs made independently - technology selections, pattern choices, and the explicit reasoning behind each one. This is the working record of solo technical ownership.
+The commit history and `DECISIONS.md` document the architectural tradeoffs and implementation decisions made independently, without a supporting team.
 
 ---
+
+---
+
+## Quick Start
+
+**Prerequisites:** Docker Desktop, Java 17, Maven 3.9+
+
+```bash
+# 1. Clone and build
+git clone https://github.com/TannerAbraham/kingwire-pipeline-demo
+cd kingwire-pipeline-demo
+
+# 2. Start MySQL + Elasticsearch + Kibana
+docker-compose up mysql elasticsearch kibana -d
+
+# 3. Wait ~15 seconds for services to be healthy, then run the app
+mvn spring-boot:run
+
+# 4. Trigger the ETL pipeline (seeds all data)
+curl -X POST http://localhost:8080/api/pipeline/run
+
+# 5. Query the API
+curl "http://localhost:8080/api/products?productLine=Aluminum+XHHW&size=5"
+curl "http://localhost:8080/api/search?q=aluminum+2/0+600v"
+curl "http://localhost:8080/api/products/summary"
+
+# Kibana index explorer
+open http://localhost:5601
+```
+
+Or run everything in Docker:
+```bash
+docker-compose up --build
+```
 
 ---
 
@@ -161,160 +218,6 @@ sequenceDiagram
 
 ---
 
-## Data Model
-
-```mermaid
-%%{init: {"theme": "dark", "themeVariables": {"primaryColor": "#162B4A", "primaryTextColor": "#FFFFFF", "primaryBorderColor": "#2A5298", "lineColor": "#3D6BB5", "secondaryColor": "#0C1929", "tertiaryColor": "#0C1929", "background": "#0C1929", "mainBkg": "#162B4A", "nodeBorder": "#2A5298", "clusterBkg": "#0C1929", "titleColor": "#FFFFFF", "edgeLabelBackground": "#0C1929", "attributeBackgroundColorEven": "#162B4A", "attributeBackgroundColorOdd": "#1E3D6B", "attributeColor": "#FFFFFF", "attributeTextColor": "#FFFFFF", "entityTextColor": "#FFFFFF"}}}%%
-erDiagram
-    PRODUCTS {
-        bigint id PK
-        varchar sku UK
-        varchar description
-        varchar product_line
-        varchar material
-        varchar gauge
-        varchar voltage_rating
-        varchar uom
-        varchar source
-        timestamp created_at
-        timestamp updated_at
-    }
-    INVENTORY {
-        bigint id PK
-        bigint product_id FK
-        varchar warehouse_code
-        int qty_on_hand
-        int qty_available
-        timestamp last_synced_at
-    }
-    PRICING {
-        bigint id PK
-        bigint product_id FK
-        varchar price_type
-        decimal unit_price
-        date effective_dt
-    }
-    RECONCILIATION_LOG {
-        bigint id PK
-        varchar sku
-        varchar source
-        varchar action
-        text diff_notes
-        timestamp run_at
-    }
-
-    PRODUCTS ||--o{ INVENTORY : "has"
-    PRODUCTS ||--o{ PRICING : "has"
-```
-
----
-
-## Stack
-
-| Layer | Technology | Purpose |
-|---|---|---|
-| Language | Java 17 | |
-| Framework | Spring Boot 3.2.5 | Web, JPA, Cache, Scheduling |
-| Primary DB | MySQL 8 | Central harmonized datastore (source of truth) |
-| Legacy Source | H2 Embedded | Simulates on-premise ERP replica |
-| Search | Elasticsearch 8.13 | Full-text product search index |
-| Visualisation | Kibana 8.13 | Index exploration (dev tool) |
-| Cache | Caffeine | In-process TTL cache for aggregate queries |
-| Connection Pool | HikariCP | Explicit pool tuning for MySQL |
-| Migrations | Flyway | Versioned schema management |
-| CSV Parsing | OpenCSV | Pricing flat-file extraction |
-| ORM | Hibernate / Spring Data JPA | Central MySQL read/write |
-| Build | Maven | Dependency management |
-| Container | Docker Compose | Local environment orchestration |
-
----
-
-## Java Spring vs Python
-
-### Type Safety at the Data Boundary
-
-The harmonizer is doing the most dangerous work in the system - taking loosely structured data from three sources with inconsistent field types and coercing it into a strict schema. Java's compile-time type system catches mismatches before runtime. A Python dict can silently carry the wrong type all the way to the database insert. A Java `RawProductRecord` with a `BigDecimal unitPrice` field will not compile if you try to assign a string to it.
-
-### Spring Data JPA vs Python ORMs
-
-The JOIN FETCH queries, `Pageable` pagination, and projection interfaces (`ProductSummaryProjection`) are built into Spring Data JPA. The equivalent in Python's SQLAlchemy requires significantly more manual wiring, and Django ORM's pagination is tied to the Django request cycle - awkward to use in a standalone pipeline context.
-
-### HikariCP
-
-HikariCP is the fastest JDBC connection pool available and is Spring Boot's default. Python's database connection pooling (SQLAlchemy's pool, psycopg2's connection pool) is functional but HikariCP has had years of production hardening specifically for high-throughput JVM workloads. For a system serving concurrent API requests against MySQL, that matters.
-
-### Spring Boot Auto-Configuration
-
-The entire application - two datasources, Flyway migrations, Elasticsearch client, Caffeine cache, scheduled cron, actuator health endpoints - starts up from `application.yml` with virtually no boilerplate. Replicating the same in Python requires manually wiring together Flask/FastAPI, SQLAlchemy, Celery or APScheduler, and separate health check logic. Each of those has its own configuration model and failure mode.
-
-### Dependency Injection
-
-The pipeline architecture relies heavily on DI - `EtlPipelineRunner` receives its extractors, harmonizer, dedup service, and indexing service as constructor-injected beans. Spring's container manages their lifecycle. In Python, this pattern is achievable with frameworks like `dependency-injector`, but it is a third-party add-on with limited adoption compared to Spring's mature, deeply integrated DI container.
-
-### Enterprise Credibility
-
-KingWire is an industrial manufacturer with an existing ERP, on-premise systems, and a Microsoft Azure environment. That stack implies an IT organization that expects Java or .NET for backend services - not because Python is wrong, but because Java's tooling around monitoring (Actuator, JMX), deployment (JAR packaging, Docker), and long-term maintainability aligns with what enterprise operations teams already know how to support.
-
-### Where Python Would Actually Win
-
-To be direct about the tradeoffs: Python would be faster to prototype, easier to write quick data transformations with pandas, and far simpler if this were a pure ETL script rather than a full application. If KingWire had asked for a one-off migration script, Python would be the better choice. The reason Java wins here is that this is a running service - it has an API layer, a cache, a scheduler, connection pooling, and health checks. That is Spring's native territory.
-
----
-
-## Quick Start
-
-**Prerequisites:** Docker Desktop, Java 17, Maven 3.9+
-
-```bash
-# 1. Clone and build
-git clone https://github.com/TannerAbraham/kingwire-pipeline-demo
-cd kingwire-pipeline-demo
-
-# 2. Start MySQL + Elasticsearch + Kibana
-docker-compose up mysql elasticsearch kibana -d
-
-# 3. Wait ~15 seconds for services to be healthy, then run the app
-mvn spring-boot:run
-
-# 4. Trigger the ETL pipeline (seeds all data)
-curl -X POST http://localhost:8080/api/pipeline/run
-
-# 5. Query the API
-curl "http://localhost:8080/api/products?productLine=Aluminum+XHHW&size=5"
-curl "http://localhost:8080/api/search?q=aluminum+2/0+600v"
-curl "http://localhost:8080/api/products/summary"
-
-# Kibana index explorer
-open http://localhost:5601
-```
-
-Or run everything in Docker:
-```bash
-docker-compose up --build
-```
-
----
-
-## API Routes
-
-| Method | Endpoint | Description | Data Source | Cached |
-|---|---|---|---|---|
-| `GET` | `/api/products` | Paginated product catalog. Filterable by `productLine`, `material`, `source` | MySQL | No |
-| `GET` | `/api/products/{sku}` | Single product with full inventory and pricing detail (JOIN FETCH) | MySQL | No |
-| `GET` | `/api/products/summary` | Aggregate product counts grouped by source and product line | MySQL | 10 min |
-| `GET` | `/api/inventory` | Inventory levels across all warehouses. Filterable by `warehouse` | MySQL | No |
-| `GET` | `/api/inventory/warehouses` | List of distinct warehouse codes (CHI, ATL, DAL, DEN, LAX) | MySQL | No |
-| `GET` | `/api/pricing` | Pricing records. Filterable by `type` (LIST, DISTRIBUTOR) | MySQL | No |
-| `GET` | `/api/search?q=` | Full-text fuzzy search across description, gauge, product line, material | Elasticsearch | No |
-| `GET` | `/api/search/by-line` | Browse by exact product line | Elasticsearch | No |
-| `GET` | `/api/search/by-material` | Browse by material (Aluminum, Copper) | Elasticsearch | No |
-| `POST` | `/api/pipeline/run` | Manually trigger a full ETL pipeline run | - | Evicts all |
-| `GET` | `/actuator/health` | Application and dependency health check | - | No |
-| `GET` | `/actuator/metrics` | JVM, HikariCP pool, and cache metrics | - | No |
-| `GET` | `/actuator/caches` | Inspect active Caffeine cache entries | - | No |
-
----
-
 ## Spring Application Architecture
 
 ```mermaid
@@ -392,6 +295,473 @@ flowchart TB
 
 ---
 
+## Data Model
+
+```mermaid
+%%{init: {"theme": "dark", "themeVariables": {"primaryColor": "#162B4A", "primaryTextColor": "#FFFFFF", "primaryBorderColor": "#2A5298", "lineColor": "#3D6BB5", "secondaryColor": "#0C1929", "tertiaryColor": "#0C1929", "background": "#0C1929", "mainBkg": "#162B4A", "nodeBorder": "#2A5298", "clusterBkg": "#0C1929", "titleColor": "#FFFFFF", "edgeLabelBackground": "#0C1929", "attributeBackgroundColorEven": "#162B4A", "attributeBackgroundColorOdd": "#1E3D6B", "attributeColor": "#FFFFFF", "attributeTextColor": "#FFFFFF", "entityTextColor": "#FFFFFF"}}}%%
+erDiagram
+    PRODUCTS {
+        bigint id PK
+        varchar sku UK
+        varchar description
+        varchar product_line
+        varchar material
+        varchar gauge
+        varchar voltage_rating
+        varchar uom
+        varchar source
+        timestamp created_at
+        timestamp updated_at
+    }
+    INVENTORY {
+        bigint id PK
+        bigint product_id FK
+        varchar warehouse_code
+        int qty_on_hand
+        int qty_available
+        timestamp last_synced_at
+    }
+    PRICING {
+        bigint id PK
+        bigint product_id FK
+        varchar price_type
+        decimal unit_price
+        date effective_dt
+    }
+    RECONCILIATION_LOG {
+        bigint id PK
+        varchar sku
+        varchar source
+        varchar action
+        text diff_notes
+        timestamp run_at
+    }
+
+    PRODUCTS ||--o{ INVENTORY : "has"
+    PRODUCTS ||--o{ PRICING : "has"
+```
+
+---
+
+## Reconciliation Log
+
+Every pipeline run writes a full audit trail to `reconciliation_log`. Each record captures the SKU, source system, action taken, and a human-readable diff of what changed.
+
+| Action | When it fires |
+|---|---|
+| `INSERT` | SKU not previously seen - new product created |
+| `UPDATE` | SKU exists but one or more fields differ - diff recorded |
+| `SKIP` | SKU exists and all fields are identical - no write needed |
+| `CONFLICT` | Record could not be processed - null SKU, malformed data |
+
+This table directly replaces the manual spreadsheet comparison process - every data change is timestamped, attributed to a source system, and queryable via `GET /api/reconciliation` without opening a file.
+
+
+## UML Class Diagram
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#162B4A", "primaryTextColor": "#FFFFFF", "primaryBorderColor": "#2A5298", "lineColor": "#3D6BB5", "secondaryColor": "#0C1929", "tertiaryColor": "#0C1929", "clusterBkg": "#0C1929", "clusterBorder": "#2A5298", "titleColor": "#FFFFFF", "edgeLabelBackground": "#162B4A", "nodeTextColor": "#FFFFFF", "classText": "#FFFFFF", "background": "#0C1929"}}}%%
+classDiagram
+    direction TB
+
+    %% ── Entity Model ──────────────────────────────────────────────────────
+
+    class Product {
+        +Long id
+        +String sku
+        +String description
+        +String productLine
+        +String material
+        +String gauge
+        +String voltageRating
+        +String uom
+        +String source
+        +LocalDateTime createdAt
+        +LocalDateTime updatedAt
+        +List~Inventory~ inventories
+        +List~Pricing~ pricings
+    }
+
+    class Inventory {
+        +Long id
+        +Product product
+        +String warehouseCode
+        +Integer qtyOnHand
+        +Integer qtyAvailable
+        +LocalDateTime lastSyncedAt
+    }
+
+    class Pricing {
+        +Long id
+        +Product product
+        +String priceType
+        +BigDecimal unitPrice
+        +LocalDate effectiveDt
+    }
+
+    class ReconciliationLog {
+        +Long id
+        +String sku
+        +String source
+        +String action
+        +String diffNotes
+        +LocalDateTime runAt
+    }
+
+    %% ── DTOs ──────────────────────────────────────────────────────────────
+
+    class RawProductRecord {
+        +String sku
+        +String description
+        +String productLine
+        +String material
+        +String gauge
+        +String voltageRating
+        +String uom
+        +String sourceSystem
+        +String warehouseCode
+        +Integer qtyOnHand
+        +Integer qtyAvailable
+        +BigDecimal listPrice
+        +BigDecimal distributorPrice
+        +LocalDate effectiveDate
+    }
+
+    class ProductResponseDto {
+        +Long id
+        +String sku
+        +String description
+        +String productLine
+        +String material
+        +String gauge
+        +Map~String,Integer~ stockByWarehouse
+        +int totalStock
+        +BigDecimal listPrice
+        +BigDecimal distributorPrice
+        +from(Product)$ ProductResponseDto
+    }
+
+    class PipelineResultDto {
+        +LocalDateTime startedAt
+        +LocalDateTime completedAt
+        +long durationMs
+        +int erpRecordsExtracted
+        +int csvRecordsExtracted
+        +int apiRecordsExtracted
+        +int inserted
+        +int updated
+        +int skipped
+        +int conflicts
+        +int elasticsearchDocumentsIndexed
+        +String status
+        +String message
+    }
+
+    class ProductDocument {
+        +String sku
+        +String description
+        +String productLine
+        +String material
+        +String gauge
+        +String voltageRating
+        +BigDecimal listPrice
+        +BigDecimal distributorPrice
+        +Integer totalQtyAvailable
+        +LocalDateTime lastIndexed
+    }
+
+    %% ── Extractors ────────────────────────────────────────────────────────
+
+    class ErpDatabaseExtractor {
+        -JdbcTemplate legacyJdbcTemplate
+        +extract() List~RawProductRecord~
+    }
+
+    class PricingCsvExtractor {
+        +extract() List~RawProductRecord~
+        -parseRow(String[]) RawProductRecord
+        -parseBigDecimal(String) BigDecimal
+    }
+
+    class WarehouseApiExtractor {
+        -String warehouseApiUrl
+        -RestTemplate restTemplate
+        +extract(List~String~) List~RawProductRecord~
+        -extractFromApi() List~RawProductRecord~
+        -generateSyntheticInventory(List~String~) List~RawProductRecord~
+    }
+
+    %% ── Transform ─────────────────────────────────────────────────────────
+
+    class ProductHarmonizer {
+        +toProduct(RawProductRecord) Product
+        +toInventory(RawProductRecord, Product) Inventory
+        +toListPricing(RawProductRecord, Product) Pricing
+        +toDistributorPricing(RawProductRecord, Product) Pricing
+        +normalizeSku(String) String
+        +normalizeGauge(String) String
+        +normalizeUom(String) String
+        +resolveMaterial(RawProductRecord) String
+    }
+
+    class DeduplicationService {
+        -ProductRepository productRepository
+        -InventoryRepository inventoryRepository
+        -PricingRepository pricingRepository
+        -ReconciliationLogRepository reconciliationLogRepository
+        -ProductHarmonizer harmonizer
+        +reconcileProducts(List~RawProductRecord~) ReconciliationResult
+        +reconcileInventory(List~RawProductRecord~) void
+        +reconcilePricing(List~RawProductRecord~) void
+        -computeDiff(Product, RawProductRecord) List~String~
+        -logReconciliation(String, String, String, String) void
+    }
+
+    %% ── Pipeline and Search ───────────────────────────────────────────────
+
+    class EtlPipelineRunner {
+        -ErpDatabaseExtractor erpExtractor
+        -PricingCsvExtractor csvExtractor
+        -WarehouseApiExtractor apiExtractor
+        -DeduplicationService deduplicationService
+        -ProductIndexingService indexingService
+        -AtomicBoolean running
+        +scheduledRun() void
+        +run() PipelineResultDto
+    }
+
+    class ProductIndexingService {
+        -ProductRepository productRepository
+        -ProductSearchRepository searchRepository
+        +reindex() int
+        -toDocument(Product) ProductDocument
+    }
+
+    %% ── Controllers ───────────────────────────────────────────────────────
+
+    class ProductController {
+        -ProductRepository productRepository
+        +getProducts(Pageable) Page~ProductResponseDto~
+        +getProduct(String) ResponseEntity~ProductResponseDto~
+        +getSummary() List~ProductSummaryProjection~
+    }
+
+    class InventoryController {
+        -InventoryRepository inventoryRepository
+        +getInventory(String, Pageable) Page~Inventory~
+        +getWarehouses() List~String~
+    }
+
+    class PricingController {
+        -PricingRepository pricingRepository
+        +getPricing(String, Pageable) Page~Pricing~
+    }
+
+    class SearchController {
+        -ProductSearchRepository searchRepository
+        +search(String, Pageable) Page~ProductDocument~
+        +byProductLine(String, Pageable) Page~ProductDocument~
+        +byMaterial(String, Pageable) Page~ProductDocument~
+    }
+
+    class PipelineController {
+        -EtlPipelineRunner pipelineRunner
+        +runPipeline() ResponseEntity~PipelineResultDto~
+    }
+
+    %% ── Relationships ─────────────────────────────────────────────────────
+
+    Product "1" *-- "many" Inventory : contains
+    Product "1" *-- "many" Pricing : contains
+
+    ErpDatabaseExtractor ..> RawProductRecord : produces
+    PricingCsvExtractor ..> RawProductRecord : produces
+    WarehouseApiExtractor ..> RawProductRecord : produces
+
+    ProductHarmonizer ..> RawProductRecord : consumes
+    ProductHarmonizer ..> Product : produces
+    ProductHarmonizer ..> Inventory : produces
+    ProductHarmonizer ..> Pricing : produces
+
+    DeduplicationService --> ProductHarmonizer : uses
+    DeduplicationService ..> ReconciliationLog : writes
+    DeduplicationService ..> Product : reconciles
+
+    EtlPipelineRunner --> ErpDatabaseExtractor : orchestrates
+    EtlPipelineRunner --> PricingCsvExtractor : orchestrates
+    EtlPipelineRunner --> WarehouseApiExtractor : orchestrates
+    EtlPipelineRunner --> DeduplicationService : orchestrates
+    EtlPipelineRunner --> ProductIndexingService : orchestrates
+    EtlPipelineRunner ..> PipelineResultDto : returns
+
+    ProductIndexingService ..> ProductDocument : produces
+
+    ProductController ..> ProductResponseDto : returns
+    PipelineController --> EtlPipelineRunner : triggers
+
+    ProductResponseDto ..> Product : maps from
+```
+
+---
+
+## API Routes
+
+| Method | Endpoint | Description | Data Source | Cached |
+|---|---|---|---|---|
+| `GET` | `/api/products` | Paginated product catalog. Filterable by `productLine`, `material`, `source` | MySQL | No |
+| `GET` | `/api/products/{sku}` | Single product with full inventory and pricing detail (JOIN FETCH) | MySQL | No |
+| `GET` | `/api/products/summary` | Aggregate product counts grouped by source and product line | MySQL | 10 min |
+| `GET` | `/api/inventory` | Inventory levels across all warehouses. Filterable by `warehouse` | MySQL | No |
+| `GET` | `/api/inventory/warehouses` | List of distinct warehouse codes (CHI, ATL, DAL, DEN, LAX) | MySQL | No |
+| `GET` | `/api/pricing` | Pricing records. Filterable by `type` (LIST, DISTRIBUTOR) | MySQL | No |
+| `GET` | `/api/search?q=` | Full-text fuzzy search across description, gauge, product line, material | Elasticsearch | No |
+| `GET` | `/api/search/by-line` | Browse by exact product line | Elasticsearch | No |
+| `GET` | `/api/search/by-material` | Browse by material (Aluminum, Copper) | Elasticsearch | No |
+| `POST` | `/api/pipeline/run` | Manually trigger a full ETL pipeline run | - | Evicts all |
+| `GET` | `/actuator/health` | Application and dependency health check | - | No |
+| `GET` | `/actuator/metrics` | JVM, HikariCP pool, and cache metrics | - | No |
+| `GET` | `/actuator/caches` | Inspect active Caffeine cache entries | - | No |
+
+---
+
+## Sample API Responses
+
+**GET /api/products/AL-XHHW2-20**
+```json
+{
+  "id": 6,
+  "sku": "AL-XHHW2-20",
+  "description": "2/0 AWG Aluminum XHHW-2 Stranded 600V",
+  "productLine": "Aluminum XHHW",
+  "material": "Aluminum",
+  "gauge": "2/0",
+  "voltageRating": "600V",
+  "uom": "FT",
+  "source": "ERP",
+  "updatedAt": "2025-01-15T02:00:43",
+  "stockByWarehouse": {
+    "ATL": 38142,
+    "CHI": 61204,
+    "DAL": 44871,
+    "DEN": 29503,
+    "LAX": 51930
+  },
+  "totalStock": 225650,
+  "listPrice": 0.9870,
+  "distributorPrice": 0.7896
+}
+```
+
+**GET /api/search?q=aluminum+xhhw+2/0**
+```json
+{
+  "content": [
+    {
+      "sku": "AL-XHHW2-20",
+      "description": "2/0 AWG Aluminum XHHW-2 Stranded 600V",
+      "productLine": "Aluminum XHHW",
+      "material": "Aluminum",
+      "gauge": "2/0",
+      "voltageRating": "600V",
+      "listPrice": 0.9870,
+      "distributorPrice": 0.7896,
+      "totalQtyAvailable": 225650,
+      "lastIndexed": "2025-01-15T02:01:12"
+    }
+  ],
+  "totalElements": 1,
+  "totalPages": 1,
+  "size": 25
+}
+```
+
+**POST /api/pipeline/run**
+```json
+{
+  "startedAt": "2025-01-15T02:00:00",
+  "completedAt": "2025-01-15T02:00:43",
+  "durationMs": 43210,
+  "erpRecordsExtracted": 29,
+  "csvRecordsExtracted": 29,
+  "apiRecordsExtracted": 145,
+  "totalExtracted": 203,
+  "inserted": 0,
+  "updated": 3,
+  "skipped": 26,
+  "conflicts": 0,
+  "elasticsearchDocumentsIndexed": 29,
+  "status": "SUCCESS",
+  "message": "Pipeline completed successfully"
+}
+```
+
+
+## Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `MYSQL_HOST` | `localhost` | MySQL server hostname |
+| `MYSQL_DB` | `kingwire_db` | Target database name |
+| `MYSQL_USER` | `root` | MySQL username |
+| `MYSQL_PASSWORD` | `secret` | MySQL password |
+| `ES_URI` | `http://localhost:9200` | Elasticsearch connection URI |
+| `WAREHOUSE_API_URL` | _(empty)_ | Warehouse REST API base URL - synthetic data generated if blank |
+
+All variables are passed via `docker-compose.yml` in local development and should be sourced from AWS Secrets Manager in production.
+
+
+## Stack
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| Language | Java 17 | |
+| Framework | Spring Boot 3.2.5 | Web, JPA, Cache, Scheduling |
+| Primary DB | MySQL 8 | Central harmonized datastore (source of truth) |
+| Legacy Source | H2 Embedded | Simulates on-premise ERP replica |
+| Search | Elasticsearch 8.13 | Full-text product search index |
+| Visualisation | Kibana 8.13 | Index exploration (dev tool) |
+| Cache | Caffeine | In-process TTL cache for aggregate queries |
+| Connection Pool | HikariCP | Explicit pool tuning for MySQL |
+| Migrations | Flyway | Versioned schema management |
+| CSV Parsing | OpenCSV | Pricing flat-file extraction |
+| ORM | Hibernate / Spring Data JPA | Central MySQL read/write |
+| Build | Maven | Dependency management |
+| Container | Docker Compose | Local environment orchestration |
+
+---
+
+## Java Spring vs Python
+
+### Type Safety at the Data Boundary
+
+The harmonizer is doing the most dangerous work in the system - taking loosely structured data from three sources with inconsistent field types and coercing it into a strict schema. Java's compile-time type system catches mismatches before runtime. A Python dict can silently carry the wrong type all the way to the database insert. A Java `RawProductRecord` with a `BigDecimal unitPrice` field will not compile if you try to assign a string to it.
+
+### Spring Data JPA vs Python ORMs
+
+The JOIN FETCH queries, `Pageable` pagination, and projection interfaces (`ProductSummaryProjection`) are built into Spring Data JPA. The equivalent in Python's SQLAlchemy requires significantly more manual wiring, and Django ORM's pagination is tied to the Django request cycle - awkward to use in a standalone pipeline context.
+
+### HikariCP
+
+HikariCP is the fastest JDBC connection pool available and is Spring Boot's default. Python's database connection pooling (SQLAlchemy's pool, psycopg2's connection pool) is functional but HikariCP has had years of production hardening specifically for high-throughput JVM workloads. For a system serving concurrent API requests against MySQL, that matters.
+
+### Spring Boot Auto-Configuration
+
+The entire application - two datasources, Flyway migrations, Elasticsearch client, Caffeine cache, scheduled cron, actuator health endpoints - starts up from `application.yml` with virtually no boilerplate. Replicating the same in Python requires manually wiring together Flask/FastAPI, SQLAlchemy, Celery or APScheduler, and separate health check logic. Each of those has its own configuration model and failure mode.
+
+### Dependency Injection
+
+The pipeline architecture relies heavily on DI - `EtlPipelineRunner` receives its extractors, harmonizer, dedup service, and indexing service as constructor-injected beans. Spring's container manages their lifecycle. In Python, this pattern is achievable with frameworks like `dependency-injector`, but it is a third-party add-on with limited adoption compared to Spring's mature, deeply integrated DI container.
+
+### Enterprise Credibility
+
+KingWire is an industrial manufacturer with an existing ERP, on-premise systems, and a Microsoft Azure environment. That stack implies an IT organization that expects Java or .NET for backend services - not because Python is wrong, but because Java's tooling around monitoring (Actuator, JMX), deployment (JAR packaging, Docker), and long-term maintainability aligns with what enterprise operations teams already know how to support.
+
+### Where Python Would Actually Win
+
+To be direct about the tradeoffs: Python would be faster to prototype, easier to write quick data transformations with pandas, and far simpler if this were a pure ETL script rather than a full application. If KingWire had asked for a one-off migration script, Python would be the better choice. The reason Java wins here is that this is a running service - it has an API layer, a cache, a scheduler, connection pooling, and health checks. That is Spring's native territory.
+
+---
+
 ## Performance Design Decisions
 
 ### HikariCP Pool Tuning (DataSourceConfig.java)
@@ -417,6 +787,135 @@ All list endpoints use Spring `Pageable` - no unbounded result sets returned
 ### Elasticsearch Full-Text Search
 Multi-field fuzzy search with description field boosted 2x. Handles spec abbreviation
 variants (XHHW/XHWW, "2/0 AWG"/"2/0") that would require complex LIKE chains in MySQL.
+
+---
+
+## Production Next Steps
+
+The architecture as built is a fully functional, well-structured data pipeline and API layer. The following represents the optimal path for scaling it to a production-grade enterprise system.
+
+**Kafka + AWS: S3 as the event source + MSK as the backbone + RDS + OpenSearch**
+
+The pricing team uploads to S3, Lambda publishes the event to MSK, the Spring consumer harmonizes and writes to RDS, a separate ES consumer updates OpenSearch. This architecture fully eliminates the nightly cron, makes data updates near real-time, and lays the foundation for the Power BI reporting layer described in the job description - all without changing the core harmonization and deduplication logic already built.
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#162B4A", "primaryTextColor": "#FFFFFF", "primaryBorderColor": "#2A5298", "lineColor": "#3D6BB5", "secondaryColor": "#0C1929", "tertiaryColor": "#0C1929", "clusterBkg": "#0C1929", "clusterBorder": "#2A5298", "titleColor": "#FFFFFF", "edgeLabelBackground": "#162B4A", "nodeTextColor": "#FFFFFF"}}}%%
+flowchart TD
+    subgraph SOURCES["Source Systems"]
+        ERP["ERP System\nPublishes change events"]
+        PT["Pricing Team\nUploads CSV to S3"]
+        WMS["WMS\nPublishes inventory events"]
+    end
+
+    subgraph AWS_ENTRY["AWS Entry Points"]
+        MSK1["MSK Topic\nerp-product-events"]
+        S3["AWS S3\npricing-exports bucket"]
+        LAMBDA["AWS Lambda\nS3 event trigger"]
+        MSK3["MSK Topic\ninventory-events"]
+    end
+
+    subgraph BACKBONE["MSK Backbone - Apache Kafka"]
+        KAFKA["Durable, replayable event stream\nDecouples producers from consumers"]
+    end
+
+    subgraph CONSUMERS["Spring Consumers"]
+        SC["Spring Consumer\nHarmonize and write to RDS"]
+        EC["ES Consumer\nUpdate OpenSearch index"]
+    end
+
+    subgraph STORES["Data Stores"]
+        RDS["AWS RDS\nMySQL - source of truth"]
+        OS["AWS OpenSearch\nFull-text search index"]
+    end
+
+    PBI["Power BI reporting layer"]
+    CW["CloudWatch\nMonitor all layers"]
+
+    classDef source fill:#162B4A,stroke:#2A5298,color:#FFFFFF
+    classDef entry fill:#1A3560,stroke:#2A5298,color:#FFFFFF
+    classDef kafka fill:#0C1929,stroke:#3D6BB5,color:#FFFFFF
+    classDef consumer fill:#162B4A,stroke:#2A5298,color:#FFFFFF
+    classDef store fill:#0C1929,stroke:#2A5298,color:#FFFFFF
+    classDef reporting fill:#1A3560,stroke:#2A5298,color:#FFFFFF
+    classDef monitor fill:#0C1929,stroke:#2A5298,color:#FFFFFF
+
+    class ERP,PT,WMS source
+    class MSK1,S3,LAMBDA,MSK3 entry
+    class KAFKA kafka
+    class SC,EC consumer
+    class RDS,OS store
+    class PBI reporting
+    class CW monitor
+
+    ERP --> MSK1
+    PT --> S3
+    S3 --> LAMBDA
+    WMS --> MSK3
+
+    MSK1 --> KAFKA
+    LAMBDA --> KAFKA
+    MSK3 --> KAFKA
+
+    KAFKA --> SC
+    KAFKA --> EC
+
+    SC --> RDS
+    EC --> OS
+
+    RDS -.->|product-harmonized topic| KAFKA
+
+    RDS --> PBI
+    OS --> PBI
+
+    CW -.->|monitors| CONSUMERS
+```
+
+**Top layer** - Three source systems: ERP publishing directly, pricing team uploading to S3, WMS publishing inventory events.
+
+**AWS entry layer** - S3 bucket catches the CSV upload, Lambda fires immediately on the S3 event, MSK topics receive events from ERP and WMS directly.
+
+**MSK backbone** - All three sources converge here. This is the decoupling point - producers don't know about consumers, and each step can fail and retry independently.
+
+**Consumer layer** - Two separate Spring consumers reading from the backbone: one harmonizes and writes to RDS, another updates OpenSearch. They're independent so an ES failure doesn't block the MySQL write.
+
+**Feedback loop** - After RDS writes, a `product-harmonized` topic fires so any future consumers (Power BI, alerts, etc.) can subscribe without changing existing code.
+
+**Bottom** - Both stores feed Power BI. CloudWatch monitors the consumer layer.
+
+| Current | Production Replacement | Benefit |
+|---|---|---|
+| Docker MySQL | AWS RDS Multi-AZ | Automatic failover, automated backups, no manual patching |
+| Local Elasticsearch | AWS OpenSearch Service | Managed cluster, snapshots, IAM access control |
+| `pricing-export.csv` in resources | S3 bucket upload | Pricing team self-serves, no redeploy required |
+| `@Scheduled` nightly cron | AWS Lambda + S3 event trigger | Pipeline fires the moment new data lands, no polling delay |
+| Console/log monitoring | AWS CloudWatch | Pipeline result metrics, alerting on conflict spikes or failures |
+| `application.yml` credentials | AWS Secrets Manager | Automatic credential rotation, no secrets in config files |
+| Sequential MySQL write + ES sync | Kafka (MSK) decoupled consumers | Each step fails and retries independently, no ambiguous pipeline state |
+
+---
+
+## Commit History
+
+```
+31ba6bc feat: implement product catalog rest api with pagination and filtering
+43b476e feat: implement product indexing service - mysql to elasticsearch sync
+4f6b9cb feat: wire etl pipeline runner with @scheduled nightly cron
+b05b4f3 feat: add deduplication service with insert/update/skip/conflict reconciliation
+9374385 feat: add product harmonizer - normalize sku, gauge, uom, material inference
+a5b6e6b feat: implement warehouse api extractor with synthetic fallback
+2aa713a feat: implement pricing csv extractor with opencsv
+4abfeaa feat: implement erp database extractor via jdbctemplate
+25395d1 feat: add caffeine caching configuration
+ce10f0e feat: configure hikaricp connection pool with explicit tuning
+b3192f2 feat: add spring data jpa and elasticsearch repositories
+08af7a2 feat: define elasticsearch product document mapping
+215626d feat: define dto layer - raw record, api response, pipeline result
+a68d593 feat: define jpa entities - product, inventory, pricing, reconciliation_log
+ef2948c feat: pricing export csv with list and distributor prices
+80fd29f feat: legacy erp h2 schema and seed data (29 representative sku records)
+7c6b7e2 feat: flyway V1 migration - products, inventory, pricing, reconciliation_log
+09c8046 init: scaffold spring boot project with maven and docker-compose
+```
 
 ---
 
@@ -466,3 +965,16 @@ kingwire-pipeline-demo/
                 ├── V1__legacy_erp_schema.sql      (H2 seed)
                 └── V2__legacy_erp_seed.sql
 ```
+
+---
+
+## Author
+
+**Tanner Abraham**
+[GitHub](https://github.com/TannerAbraham)
+
+---
+
+## Thank You
+
+Thank you to **Zach Haden** and **Ryan King** at KingWire for the time and opportunity to interview for this position.
