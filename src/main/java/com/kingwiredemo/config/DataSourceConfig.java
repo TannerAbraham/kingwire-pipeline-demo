@@ -51,6 +51,8 @@ public class DataSourceConfig {
         config.setConnectionTimeout(30_000);   // 30s — fail fast on pool exhaustion
         config.setIdleTimeout(600_000);         // 10m — reclaim idle connections
         config.setMaxLifetime(1_800_000);       // 30m — rotate before MySQL server timeout
+        config.setInitializationFailTimeout(-1); // wait for MySQL on startup, don't crash
+
 
         // Diagnostics
         config.setPoolName("KingWire-MySQL-Primary");
