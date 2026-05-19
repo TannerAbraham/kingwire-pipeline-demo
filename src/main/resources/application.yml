@@ -5,7 +5,7 @@ spring:
   # Primary datasource — MySQL 8 (central harmonized datastore)
   # HikariCP pool tuning is handled in DataSourceConfig.java
   datasource:
-    url: jdbc:mysql://${MYSQL_HOST:localhost}:3306/${MYSQL_DB:kingwire_db}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DB:kingwire_db}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: ${MYSQL_USER:root}
     password: ${MYSQL_PASSWORD:secret}
     driver-class-name: com.mysql.cj.jdbc.Driver
