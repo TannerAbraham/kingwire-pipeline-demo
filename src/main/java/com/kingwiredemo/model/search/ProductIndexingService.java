@@ -2,7 +2,6 @@ package com.kingwiredemo.model.search;
 
 import com.kingwiredemo.model.entity.Pricing;
 import com.kingwiredemo.model.entity.Product;
-import com.kingwiredemo.model.search.ProductDocument;
 import com.kingwiredemo.repository.ProductRepository;
 import com.kingwiredemo.repository.ProductSearchRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,12 +21,6 @@ public class ProductIndexingService {
     private final ProductRepository       productRepository;
     private final ProductSearchRepository searchRepository;
 
-    /**
-     * Full reindex: loads all products with relations from MySQL,
-     * maps to ES documents, clears the old index, and bulk-inserts.
-     *
-     * @return number of documents indexed
-     */
     @Transactional(readOnly = true)
     public int reindex() {
         log.info("[ES] Starting full product reindex...");
@@ -53,7 +46,6 @@ public class ProductIndexingService {
     }
 
     private ProductDocument toDocument(Product product) {
-        // Roll up total available qty across all warehouses
         int totalAvailable = product.getInventories().stream()
                 .mapToInt(i -> i.getQtyAvailable() != null ? i.getQtyAvailable() : 0)
                 .sum();
