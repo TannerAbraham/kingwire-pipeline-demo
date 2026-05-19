@@ -9,6 +9,7 @@ A backend data pipeline and REST API demonstrating extraction, harmonization, an
 ## Table of Contents
 
 - [Assessment Response](#assessment-response)
+- [Live Deployment](#live-deployment)
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
 - [ETL Pipeline Flow](#etl-pipeline-flow)
@@ -23,6 +24,7 @@ A backend data pipeline and REST API demonstrating extraction, harmonization, an
 - [Java Spring vs Python](#java-spring-vs-python)
 - [Performance Design Decisions](#performance-design-decisions)
 - [Production Next Steps](#production-next-steps)
+- [CI/CD Pipeline](#cicd-pipeline)
 - [Commit History](#commit-history)
 - [Project Structure](#project-structure)
 - [Thank You](#thank-you)
@@ -83,6 +85,58 @@ The Elasticsearch layer specifically addresses KingWire's product catalog use ca
 The commit history and `DECISIONS.md` document the architectural tradeoffs and implementation decisions made independently, without a supporting team.
 
 ---
+
+---
+
+## Live Deployment
+
+The API is live on Railway at:
+
+**https://kingwire-pipeline-demo-production.up.railway.app**
+
+No setup required. Use the endpoints below to interact with it directly.
+
+**Trigger the ETL pipeline** (seeds all product, inventory, and pricing data):
+```bash
+curl -X POST https://kingwire-pipeline-demo-production.up.railway.app/api/pipeline/run
+```
+
+**Browse the product catalog:**
+```bash
+curl "https://kingwire-pipeline-demo-production.up.railway.app/api/products?size=5"
+```
+
+**Filter by product line:**
+```bash
+curl "https://kingwire-pipeline-demo-production.up.railway.app/api/products?productLine=Aluminum%20XHHW"
+```
+
+**Full-text search:**
+```bash
+curl "https://kingwire-pipeline-demo-production.up.railway.app/api/search?q=aluminum+xhhw+2/0"
+```
+
+**Inventory by warehouse:**
+```bash
+curl "https://kingwire-pipeline-demo-production.up.railway.app/api/inventory?warehouse=CHI"
+```
+
+**Pricing by type:**
+```bash
+curl "https://kingwire-pipeline-demo-production.up.railway.app/api/pricing?type=DISTRIBUTOR"
+```
+
+**Aggregate summary (cached):**
+```bash
+curl "https://kingwire-pipeline-demo-production.up.railway.app/api/products/summary"
+```
+
+**Health check:**
+```bash
+curl "https://kingwire-pipeline-demo-production.up.railway.app/actuator/health"
+```
+
+All endpoints can also be pasted directly into a browser or imported into Postman using the base URL above.
 
 ---
 
@@ -891,6 +945,84 @@ flowchart TD
 | Console/log monitoring | AWS CloudWatch | Pipeline result metrics, alerting on conflict spikes or failures |
 | `application.yml` credentials | AWS Secrets Manager | Automatic credential rotation, no secrets in config files |
 | Sequential MySQL write + ES sync | Kafka (MSK) decoupled consumers | Each step fails and retries independently, no ambiguous pipeline state |
+
+---
+
+## CI/CD Pipeline
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#162B4A", "primaryTextColor": "#FFFFFF", "primaryBorderColor": "#2A5298", "lineColor": "#3D6BB5", "secondaryColor": "#0C1929", "tertiaryColor": "#0C1929", "clusterBkg": "#0C1929", "clusterBorder": "#2A5298", "titleColor": "#FFFFFF", "edgeLabelBackground": "#162B4A", "nodeTextColor": "#FFFFFF"}}}%%
+flowchart TD
+    subgraph DEVELOPER["Developer"]
+        PUSH["git push / PR merge"]
+    end
+
+    subgraph CI["GitHub Actions"]
+        CO["Checkout\nactions/checkout"]
+        TEST["Build and Test\nmvn verify"]
+        DOCKER["Docker Build\nmulti-stage Dockerfile"]
+        PUSH_IMG["Push Image\ntagged with commit SHA"]
+        FAIL["Tests fail\nbranch blocked from merge"]
+
+        CO --> TEST --> DOCKER --> PUSH_IMG
+        TEST -.->|failure| FAIL
+    end
+
+    subgraph REGISTRY["Registry"]
+        GHCR["GitHub Container Registry\nghcr.io/TannerAbraham/kingwire-pipeline-demo"]
+    end
+
+    subgraph RAILWAY["Railway"]
+        ENV["Env Vars injected\nMYSQL_URL - MYSQL_USER\nMYSQL_PASSWORD - ES_URI"]
+        DEPLOY["Railway Deploy\npulls new image"]
+        SB["Spring Boot\nHikariCP + Flyway startup"]
+        MYSQL["MySQL"]
+        ES["Elasticsearch"]
+
+        ENV -.->|injected| DEPLOY
+        DEPLOY --> SB
+        DEPLOY --> MYSQL
+        DEPLOY --> ES
+    end
+
+    classDef trigger fill:#2A5298,stroke:#0C1929,color:#FFFFFF
+    classDef step fill:#162B4A,stroke:#2A5298,color:#FFFFFF
+    classDef registry fill:#0C1929,stroke:#2A5298,color:#FFFFFF
+    classDef deploy fill:#1A3560,stroke:#2A5298,color:#FFFFFF
+    classDef service fill:#0C1929,stroke:#2A5298,color:#FFFFFF
+    classDef failure fill:#162B4A,stroke:#2A5298,color:#FFFFFF
+
+    class PUSH trigger
+    class CO,TEST,DOCKER,PUSH_IMG step
+    class GHCR registry
+    class ENV,DEPLOY deploy
+    class SB,MYSQL,ES service
+    class FAIL failure
+
+    PUSH --> CO
+    PUSH_IMG --> GHCR
+    GHCR --> DEPLOY
+```
+
+The pipeline covers the full deployment lifecycle across four lanes.
+
+**Trigger**
+A `git push` to `main` - or a merged PR - fires the GitHub Actions workflow. Nothing deploys without passing through the pipeline first.
+
+**CI (GitHub Actions)**
+Three sequential steps: checkout - `mvn verify` (compiles, runs unit tests including `ProductHarmonizerTest` and `DeduplicationServiceTest`) - multi-stage Docker build using the existing `Dockerfile`. The Maven stage is the gate: a test failure blocks the image from being built and the PR cannot merge.
+
+**Registry**
+On success, the image is tagged with the commit SHA and pushed to GitHub Container Registry (`ghcr.io`). Using the SHA tag rather than `latest` means every deployed version is traceable back to an exact commit.
+
+**Railway Deploy**
+Railway pulls the new image, injects the environment variables (`MYSQL_URL`, `MYSQL_USER`, `MYSQL_PASSWORD`, `ES_URI`) from its secrets panel, and starts the container. On startup, HikariCP initializes with `initializationFailTimeout=-1` and Flyway retries up to 10 times before the app is marked healthy.
+
+**Failure Path**
+If Maven or Docker fails, no image is pushed, Railway sees no new image, and the running deployment is untouched. The branch is blocked from merging until the build is green.
+
+**What to Wire Up**
+One GitHub Actions workflow file (`.github/workflows/deploy.yml`) with three jobs - `test`, `docker-build-push`, and a Railway deploy step using the `railwayapp/railway-github-action`.
 
 ---
 
