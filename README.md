@@ -92,48 +92,48 @@ The commit history and `DECISIONS.md` document the architectural tradeoffs and i
 
 The API is live on Railway at:
 
-**https://kingwire-pipeline-demo-production.up.railway.app**
+**https://kingwire-pipeline-demo.up.railway.app**
 
 No setup required. Use the endpoints below to interact with it directly.
 
 **Trigger the ETL pipeline** (seeds all product, inventory, and pricing data):
 ```bash
-curl -X POST https://kingwire-pipeline-demo-production.up.railway.app/api/pipeline/run
+curl -X POST https://kingwire-pipeline-demo.up.railway.app/api/pipeline/run
 ```
 
 **Browse the product catalog:**
 ```bash
-curl "https://kingwire-pipeline-demo-production.up.railway.app/api/products?size=5"
+curl "https://kingwire-pipeline-demo.up.railway.app/api/products?size=5"
 ```
 
 **Filter by product line:**
 ```bash
-curl "https://kingwire-pipeline-demo-production.up.railway.app/api/products?productLine=Aluminum%20XHHW"
+curl "https://kingwire-pipeline-demo.up.railway.app/api/products?productLine=Aluminum%20XHHW"
 ```
 
 **Full-text search:**
 ```bash
-curl "https://kingwire-pipeline-demo-production.up.railway.app/api/search?q=aluminum+xhhw+2/0"
+curl "https://kingwire-pipeline-demo.up.railway.app/api/search?q=aluminum+xhhw+2/0"
 ```
 
 **Inventory by warehouse:**
 ```bash
-curl "https://kingwire-pipeline-demo-production.up.railway.app/api/inventory?warehouse=CHI"
+curl "https://kingwire-pipeline-demo.up.railway.app/api/inventory?warehouse=CHI"
 ```
 
 **Pricing by type:**
 ```bash
-curl "https://kingwire-pipeline-demo-production.up.railway.app/api/pricing?type=DISTRIBUTOR"
+curl "https://kingwire-pipeline-demo.up.railway.app/api/pricing?type=DISTRIBUTOR"
 ```
 
 **Aggregate summary (cached):**
 ```bash
-curl "https://kingwire-pipeline-demo-production.up.railway.app/api/products/summary"
+curl "https://kingwire-pipeline-demo.up.railway.app/api/products/summary"
 ```
 
 **Health check:**
 ```bash
-curl "https://kingwire-pipeline-demo-production.up.railway.app/actuator/health"
+curl "https://kingwire-pipeline-demo.up.railway.app/actuator/health"
 ```
 
 All endpoints can also be pasted directly into a browser or imported into Postman using the base URL above.
