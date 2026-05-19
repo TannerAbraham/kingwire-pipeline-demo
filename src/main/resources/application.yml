@@ -1,16 +1,10 @@
+server:
+  port: ${PORT:8080}
+
 spring:
   application:
     name: kingwire-pipeline-demo
 
-server:
-  port: ${PORT:8080}
-
-  # Primary datasource — MySQL 8 (central harmonized datastore)
-  # HikariCP pool tuning is handled in DataSourceConfig.java
-  #
-  # Railway exposes a MYSQL_URL (or DATABASE_URL) environment variable that
-  # contains the full JDBC connection string. We prefer that when present.
-  # Fallback chain: MYSQL_URL → individual host/port/db variables → localhost defaults.
   datasource:
     url: ${MYSQL_URL:jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DB:kingwire_db}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&createDatabaseIfNotExist=true}
     username: ${MYSQL_USER:root}
