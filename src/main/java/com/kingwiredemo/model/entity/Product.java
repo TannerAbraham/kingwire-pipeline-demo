@@ -6,8 +6,8 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "products", indexes = {
@@ -58,11 +58,15 @@ public class Product {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    // Changed from List to Set to prevent Hibernate MultipleBagFetchException
+    // when JOIN FETCHing both collections simultaneously. Set is also semantically
+    // correct here — there should never be duplicate inventory rows for the same
+    // warehouse on the same product, nor duplicate pricing rows for the same type.
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @Builder.Default
-    private List<Inventory> inventories = new ArrayList<>();
+    private Set<Inventory> inventories = new HashSet<>();
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @Builder.Default
-    private List<Pricing> pricings = new ArrayList<>();
+    private Set<Pricing> pricings = new HashSet<>();
 }

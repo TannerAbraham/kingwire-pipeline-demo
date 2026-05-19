@@ -26,19 +26,37 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     Page<Product> findByProductLineAndMaterial(String productLine, String material, Pageable pageable);
 
-    /** Eagerly fetch inventory and pricing in one query to avoid N+1 on detail endpoint */
+    /**
+     * Eagerly fetch inventory and pricing in one query to avoid N+1 on detail endpoint.
+     * Safe with Set collections — Hibernate can JOIN FETCH multiple Sets simultaneously
+     * because they have no bag-ordering ambiguity.
+     */
     @Query("SELECT DISTINCT p FROM Product p " +
-           "LEFT JOIN FETCH p.inventories " +
-           "LEFT JOIN FETCH p.pricings " +
-           "WHERE p.sku = :sku")
+            "LEFT JOIN FETCH p.inventories " +
+            "LEFT JOIN FETCH p.pricings " +
+            "WHERE p.sku = :sku")
     Optional<Product> findBySkuWithDetails(@Param("sku") String sku);
 
     /** Summary projection used by the cached aggregate endpoint */
     @Query("SELECT p.source AS source, p.productLine AS productLine, COUNT(p) AS count " +
-           "FROM Product p GROUP BY p.source, p.productLine ORDER BY p.source, p.productLine")
+            "FROM Product p GROUP BY p.source, p.productLine ORDER BY p.source, p.productLine")
     List<ProductSummaryProjection> findSummaryGrouped();
 
-    /** All products with their relations — used by the ES indexing service */
-    @Query("SELECT DISTINCT p FROM Product p LEFT JOIN FETCH p.inventories LEFT JOIN FETCH p.pricings")
-    List<Product> findAllWithDetails();
+    /**
+     * Used by ProductIndexingService — loads all products with their inventory collections.
+     * Split into two queries (one for inventories, one for pricings) to avoid a cartesian
+     * product in the SQL result set when both collections are large. Hibernate's first-level
+     * cache merges both results into the same Product instances within the same session,
+     * so after both queries run, every product has both collections fully populated.
+     */
+    @Query("SELECT DISTINCT p FROM Product p LEFT JOIN FETCH p.inventories")
+    List<Product> findAllWithInventories();
+
+    /**
+     * Second half of the split fetch — loads pricings into the already-resident Product
+     * instances in the current Hibernate session. Return value is intentionally discarded
+     * by the caller; the side effect of populating the pricings collection is what matters.
+     */
+    @Query("SELECT DISTINCT p FROM Product p LEFT JOIN FETCH p.pricings")
+    List<Product> findAllWithPricings();
 }
