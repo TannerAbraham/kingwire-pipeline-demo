@@ -58,10 +58,10 @@ public class Product {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    // Changed from List to Set to prevent Hibernate MultipleBagFetchException
-    // when JOIN FETCHing both collections simultaneously. Set is also semantically
-    // correct here — there should never be duplicate inventory rows for the same
-    // warehouse on the same product, nor duplicate pricing rows for the same type.
+    // Changed from List to Set — fixes MultipleBagFetchException when
+    // JOIN FETCHing two collections in the same JPQL query.
+    // Hibernate can simultaneously fetch multiple Set associations but
+    // not multiple List (bag) associations.
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @Builder.Default
     private Set<Inventory> inventories = new HashSet<>();
