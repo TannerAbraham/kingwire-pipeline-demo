@@ -2,10 +2,9 @@ spring:
   application:
     name: kingwire-pipeline-demo
 
-  # Primary datasource — MySQL 8 (central harmonized datastore)
-  # HikariCP pool tuning is handled in DataSourceConfig.java
+
   datasource:
-    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DB:kingwire_db}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    url: ${MYSQL_URL:jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DB:kingwire_db}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&createDatabaseIfNotExist=true}
     username: ${MYSQL_USER:root}
     password: ${MYSQL_PASSWORD:secret}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -25,6 +24,8 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: false
+    connect-retries: 10
+    connect-retries-interval: 5
 
   # Elasticsearch — search index layer
   elasticsearch:
