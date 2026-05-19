@@ -36,8 +36,8 @@ public class ProductIndexingService {
         // Hibernate caches these Product instances in the session's first-level cache.
         List<Product> products = productRepository.findAllWithInventories();
 
-        // Query 2: load pricings. Hibernate merges results into the same Product
-        // instances already in the session — no second list needed.
+        // Query 2: load pricings into the same session. Hibernate merges the results
+        // into the same Product instances already cached above — no second list needed.
         productRepository.findAllWithPricings();
 
         // At this point every Product in `products` has both collections populated.
