@@ -1104,9 +1104,3 @@ kingwire-pipeline-demo/
 
 **Tanner Abraham**
 [GitHub](https://github.com/TannerAbraham)
-
----
-
-## Thank You
-
-Thank you to **Zach Haden** and **Ryan King** at KingWire for the time and opportunity to interview for this position.
